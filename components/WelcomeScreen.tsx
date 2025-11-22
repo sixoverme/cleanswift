@@ -5,7 +5,7 @@ import { Shield, Layout, Loader2 } from 'lucide-react';
 // Go to Google Cloud Console -> Credentials -> Create Credentials -> OAuth Client ID
 // Application Type: Web Application
 // Authorized JavaScript origins: http://localhost:3000 (or your github pages URL)
-const GOOGLE_CLIENT_ID = 339121394936-rguue4bt22dau41ldkj0kipt9fodggm3.apps.googleusercontent.com;
+const GOOGLE_CLIENT_ID = "339121394936-rguue4bt22dau41ldkj0kipt9fodggm3.apps.googleusercontent.com";
 
 declare global {
   interface Window {

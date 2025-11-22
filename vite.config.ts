@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     return {
+      base: '/cleanswift/',   // <-- REQUIRED FOR GITHUB PAGES
       server: {
         port: 3000,
         host: '0.0.0.0',
@@ -21,3 +22,4 @@ export default defineConfig(({ mode }) => {
       }
     };
 });
+
