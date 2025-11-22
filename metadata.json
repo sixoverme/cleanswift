@@ -1,0 +1,5 @@
+{
+  "name": "CleanSwift Manager",
+  "description": "A comprehensive management dashboard for house cleaners featuring client, appointment, invoice, and inventory management.",
+  "requestFramePermissions": []
+}
