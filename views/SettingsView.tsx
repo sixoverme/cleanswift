@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { UserProfile, JobType, Invoice, Status } from '../types';
-import { User, MapPin, Plus, Trash2, Save, Upload, Briefcase, DollarSign, Database, RefreshCw } from 'lucide-react';
+import { UserProfile, JobType, Invoice, Status, ChecklistTemplate, ChecklistItem } from '../types';
+import { User, MapPin, Plus, Trash2, Save, Upload, Briefcase, DollarSign, Database, RefreshCw, CheckSquare } from 'lucide-react';
 import { db } from '../services/mockData';
+
+const generateId = () => Math.random().toString(36).substr(2, 9);
 
 const SettingsView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
@@ -16,6 +18,19 @@ const SettingsView: React.FC = () => {
     jobTypes: [
       { id: '1', name: 'Standard Clean', defaultRate: 45 },
       { id: '2', name: 'Deep Clean', defaultRate: 60 }
+    ],
+    checklistTemplates: [
+        {
+            id: 'template1',
+            name: 'Standard Residential Clean',
+            items: [
+                { id: generateId(), task: 'Dust all surfaces', frequency: 'Every Time' },
+                { id: generateId(), task: 'Vacuum carpets', frequency: 'Every Time' },
+                { id: generateId(), task: 'Clean kitchen counters', frequency: 'Every Time' },
+                { id: generateId(), task: 'Wipe down appliances', frequency: 'Every Other Time' },
+                { id: generateId(), task: 'Clean baseboards', frequency: 'Monthly' }
+            ]
+        }
     ]
   };
 
@@ -147,6 +162,61 @@ const SettingsView: React.FC = () => {
     }));
   };
 
+  // --- CHECKLIST FUNCTIONS ---
+  const addChecklistTemplate = () => {
+      const newTemplate: ChecklistTemplate = {
+          id: generateId(),
+          name: 'New Template',
+          items: []
+      };
+      setProfile(prev => ({ ...prev, checklistTemplates: [...(prev.checklistTemplates || []), newTemplate] }));
+  };
+
+  const removeChecklistTemplate = (id: string) => {
+      setProfile(prev => ({ ...prev, checklistTemplates: (prev.checklistTemplates || []).filter(t => t.id !== id) }));
+  };
+
+  const updateTemplateName = (id: string, name: string) => {
+      setProfile(prev => ({
+          ...prev,
+          checklistTemplates: (prev.checklistTemplates || []).map(t => t.id === id ? { ...t, name } : t)
+      }));
+  };
+
+  const addChecklistItem = (templateId: string) => {
+      const newItem: Omit<ChecklistItem, 'completed'> = {
+          id: generateId(),
+          task: '',
+          frequency: 'Every Time'
+      };
+      setProfile(prev => ({
+          ...prev,
+          checklistTemplates: (prev.checklistTemplates || []).map(t =>
+              t.id === templateId ? { ...t, items: [...t.items, newItem] } : t
+          )
+      }));
+  };
+
+  const removeChecklistItem = (templateId: string, itemId: string) => {
+      setProfile(prev => ({
+          ...prev,
+          checklistTemplates: (prev.checklistTemplates || []).map(t =>
+              t.id === templateId ? { ...t, items: t.items.filter(i => i.id !== itemId) } : t
+          )
+      }));
+  };
+
+  const updateChecklistItem = (templateId: string, itemId: string, field: keyof Omit<ChecklistItem, 'completed'>, value: any) => {
+      setProfile(prev => ({
+          ...prev,
+          checklistTemplates: (prev.checklistTemplates || []).map(t =>
+              t.id === templateId
+                  ? { ...t, items: t.items.map(i => i.id === itemId ? { ...i, [field]: value } : i) }
+                  : t
+          )
+      }));
+  };
+
   if (isLoading) return <div className="p-8 text-center">Loading Settings...</div>;
 
   return (
@@ -254,8 +324,8 @@ const SettingsView: React.FC = () => {
         </div>
 
         {/* Right Column: Job Types & Rates */}
-        <div className="lg:col-span-2">
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 h-full">
+        <div className="lg:col-span-2 space-y-6">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex justify-between items-center mb-6">
                     <div>
                         <h3 className="font-semibold text-gray-800 flex items-center gap-2">
@@ -312,6 +382,72 @@ const SettingsView: React.FC = () => {
                     {profile.jobTypes.length === 0 && (
                         <div className="text-center py-8 text-gray-400 italic bg-gray-50 rounded-lg border border-dashed border-gray-200">
                             No job types defined. Click "Add Service" to start.
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Checklist Templates */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div className="flex justify-between items-center mb-6">
+                    <div>
+                        <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                            <CheckSquare size={18} /> Checklist Templates
+                        </h3>
+                        <p className="text-sm text-gray-500 mt-1">Create reusable checklists for different job types.</p>
+                    </div>
+                    <button
+                        onClick={addChecklistTemplate}
+                        className="flex items-center gap-2 text-sm bg-primary-50 text-primary-700 px-3 py-1.5 rounded-lg hover:bg-primary-100 transition-colors"
+                    >
+                        <Plus size={16} /> Add Template
+                    </button>
+                </div>
+
+                <div className="space-y-4">
+                    {(profile.checklistTemplates || []).map(template => (
+                        <div key={template.id} className="bg-gray-50 rounded-lg border border-gray-200 p-4">
+                            <div className="flex justify-between items-center mb-3">
+                                <input
+                                    type="text"
+                                    value={template.name}
+                                    onChange={(e) => updateTemplateName(template.id, e.target.value)}
+                                    className="font-semibold text-gray-800 border-b-2 border-transparent focus:border-primary-500 bg-transparent text-lg"
+                                />
+                                <button onClick={() => removeChecklistTemplate(template.id)} className="text-gray-400 hover:text-red-500 p-2"><Trash2 size={18} /></button>
+                            </div>
+
+                            {/* Items */}
+                            <div className="space-y-2">
+                                {template.items.map(item => (
+                                    <div key={item.id} className="flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            value={item.task}
+                                            onChange={(e) => updateChecklistItem(template.id, item.id, 'task', e.target.value)}
+                                            className="flex-grow bg-white border border-gray-300 rounded px-2 py-1 text-sm"
+                                            placeholder="Task description..."
+                                        />
+                                        <select
+                                            value={item.frequency}
+                                            onChange={(e) => updateChecklistItem(template.id, item.id, 'frequency', e.target.value)}
+                                            className="bg-white border border-gray-300 rounded px-2 py-1 text-sm"
+                                        >
+                                            <option>Every Time</option>
+                                            <option>Every Other Time</option>
+                                            <option>Monthly</option>
+                                        </select>
+                                        <button onClick={() => removeChecklistItem(template.id, item.id)} className="text-gray-400 hover:text-red-500 p-1"><Trash2 size={16} /></button>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <button onClick={() => addChecklistItem(template.id)} className="text-xs mt-3 bg-white border border-gray-300 text-gray-600 px-2 py-1 rounded hover:bg-gray-50">+ Add Item</button>
+                        </div>
+                    ))}
+                    {(profile.checklistTemplates || []).length === 0 && (
+                        <div className="text-center py-8 text-gray-400 italic bg-gray-50 rounded-lg border border-dashed border-gray-200">
+                            No checklist templates defined.
                         </div>
                     )}
                 </div>

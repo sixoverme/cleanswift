@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Client, Contact, Location, Child, Pet } from '../types';
+import { Client, Contact, Location, Child, Pet, ChecklistTemplate, ChecklistItem } from '../types';
 import { db } from '../services/mockData';
 import Modal from '../components/Modal';
-import { Plus, Edit, Trash2, Phone, Mail, MapPin, User, Home, PawPrint, Smile, ArrowLeft, MessageSquare } from 'lucide-react';
+import { Plus, Edit, Trash2, Phone, Mail, MapPin, User, Home, PawPrint, Smile, ArrowLeft, MessageSquare, CheckSquare } from 'lucide-react';
 
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -12,6 +12,7 @@ const ClientsView: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>([]);
   
   // Form State
   const emptyClient: Omit<Client, 'id'> = {
@@ -21,20 +22,32 @@ const ClientsView: React.FC = () => {
     children: [],
     pets: [],
     houseNotes: '',
-    generalNotes: ''
+    generalNotes: '',
+    checklist: []
   };
 
   const [formData, setFormData] = useState<Client>({ ...emptyClient, id: '' } as Client);
 
   useEffect(() => {
-    fetchClients();
+    loadData();
   }, []);
 
+  const loadData = async () => {
+      setLoading(true);
+      const [clientsData, settings] = await Promise.all([
+          db.getClients(),
+          db.getSettings()
+      ]);
+      setClients(clientsData);
+      if (settings?.checklistTemplates) {
+          setChecklistTemplates(settings.checklistTemplates);
+      }
+      setLoading(false);
+  };
+
   const fetchClients = async () => {
-    setLoading(true);
     const data = await db.getClients();
     setClients(data);
-    setLoading(false);
   };
 
   const handleDelete = async (id: string, e?: React.MouseEvent) => {
@@ -109,6 +122,41 @@ const ClientsView: React.FC = () => {
   const addPet = () => setFormData(prev => ({...prev, pets: [...prev.pets, { id: generateId(), name: '', type: '', notes: '' }]}));
   const removePet = (id: string) => setFormData(prev => ({ ...prev, pets: prev.pets.filter(p => p.id !== id) }));
   const updatePet = (id: string, field: keyof Pet, value: any) => setFormData(prev => ({...prev, pets: prev.pets.map(p => p.id === id ? { ...p, [field]: value } : p)}));
+
+  // Checklist Form Helpers
+  const handleApplyTemplate = (templateId: string) => {
+      const template = checklistTemplates.find(t => t.id === templateId);
+      if (!template) return;
+
+      const newItems: ChecklistItem[] = template.items.map(item => ({
+          ...item,
+          id: generateId(), // Ensure unique ID for each client's item
+          completed: false
+      }));
+
+      setFormData(prev => ({ ...prev, checklist: newItems }));
+  };
+
+  const addChecklistItem = () => {
+      const newItem: ChecklistItem = {
+          id: generateId(),
+          task: '',
+          frequency: 'Every Time',
+          completed: false
+      };
+      setFormData(prev => ({ ...prev, checklist: [...(prev.checklist || []), newItem] }));
+  };
+
+  const removeChecklistItem = (id: string) => {
+      setFormData(prev => ({ ...prev, checklist: (prev.checklist || []).filter(i => i.id !== id) }));
+  };
+
+  const updateChecklistItem = (id: string, field: keyof ChecklistItem, value: any) => {
+      setFormData(prev => ({
+          ...prev,
+          checklist: (prev.checklist || []).map(i => i.id === id ? { ...i, [field]: value } : i)
+      }));
+  };
 
   if (loading) return <div className="p-8 text-center">Loading Clients...</div>;
 
@@ -223,6 +271,47 @@ const ClientsView: React.FC = () => {
                 placeholder="Communication preferences, payment details..."
                 value={formData.generalNotes} onChange={e => setFormData({...formData, generalNotes: e.target.value})}
             />
+            </div>
+        </div>
+
+        {/* Checklist */}
+        <div>
+            <div className="flex justify-between items-center mb-2">
+                <h4 className="text-sm font-bold text-gray-700 flex items-center gap-2"><CheckSquare size={16}/> Default Cleaning Checklist</h4>
+                <div className="flex items-center gap-2">
+                    <select
+                        onChange={(e) => handleApplyTemplate(e.target.value)}
+                        className="text-xs bg-white border border-gray-300 px-2 py-1 rounded"
+                        defaultValue=""
+                    >
+                        <option value="" disabled>Apply a Template</option>
+                        {checklistTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
+                    <button type="button" onClick={addChecklistItem} className="text-xs bg-primary-50 text-primary-700 px-2 py-1 rounded hover:bg-primary-100">+ Add Custom Task</button>
+                </div>
+            </div>
+            <div className="border border-gray-200 rounded-md p-3 space-y-2 max-h-60 overflow-y-auto">
+                {(formData.checklist || []).map(item => (
+                    <div key={item.id} className="flex items-center gap-2">
+                        <input
+                            placeholder="Task description..."
+                            className="flex-grow border p-1 rounded text-sm"
+                            value={item.task}
+                            onChange={e => updateChecklistItem(item.id, 'task', e.target.value)}
+                        />
+                        <select
+                            className="border p-1 rounded text-sm bg-white"
+                            value={item.frequency}
+                            onChange={e => updateChecklistItem(item.id, 'frequency', e.target.value as ChecklistItem['frequency'])}
+                        >
+                            <option>Every Time</option>
+                            <option>Every Other Time</option>
+                            <option>Monthly</option>
+                        </select>
+                        <button type="button" onClick={() => removeChecklistItem(item.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={16}/></button>
+                    </div>
+                ))}
+                {(formData.checklist || []).length === 0 && <div className="text-sm text-gray-400 italic">No checklist items defined for this client.</div>}
             </div>
         </div>
 
@@ -356,6 +445,22 @@ const ClientsView: React.FC = () => {
                         </p>
                     </div>
                 </div>
+
+                 {/* Checklist Card */}
+                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                        <h3 className="font-semibold text-gray-800 flex items-center gap-2"><CheckSquare size={18}/> Cleaning Checklist</h3>
+                        <span className="bg-gray-200 text-gray-600 text-xs px-2 py-1 rounded-full">{(selectedClient.checklist || []).length} items</span>
+                    </div>
+                    <div className="p-4 space-y-2 max-h-60 overflow-y-auto">
+                        {(selectedClient.checklist || []).length > 0 ? selectedClient.checklist?.map(item => (
+                            <div key={item.id} className="text-sm flex items-center justify-between bg-gray-50 p-2 rounded">
+                                <span className="font-medium">{item.task}</span>
+                                <span className="text-xs text-gray-500 bg-white px-2 py-1 rounded-full border">{item.frequency}</span>
+                            </div>
+                        )) : <div className="text-sm text-center text-gray-400 italic p-4">No checklist assigned.</div>}
+                    </div>
+                 </div>
 
                  {/* Household */}
                  <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">

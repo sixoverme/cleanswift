@@ -41,6 +41,20 @@ const INITIAL_CLIENTS: Client[] = [
     pets: [],
     houseNotes: '',
     generalNotes: ''
+  },
+  {
+    id: 'verify-client-1',
+    name: 'Verification Client',
+    contacts: [
+      { id: 'c1', name: 'Verify Contact', relation: 'Self', phone: '555-555-5555', email: 'verify@test.com', isPrimary: true },
+    ],
+    locations: [
+      { id: 'l1', address: '123 Verification St, Test City', type: 'Home', notes: 'Gate code: 4321', isPrimary: true }
+    ],
+    children: [],
+    pets: [],
+    houseNotes: 'Test house notes.',
+    generalNotes: 'Test general notes.'
   }
 ];
 
@@ -84,6 +98,24 @@ const INITIAL_APPOINTMENTS: Appointment[] = [
     estimatedHours: 3,
     notes: 'Regular bi-weekly clean.'
   },
+  {
+    id: 'verify-appt-1',
+    clientId: 'verify-client-1',
+    clientName: 'Verification Client',
+    date: getRelativeDate(0), // Today's date
+    time: '10:00',
+    serviceType: 'Verification Clean',
+    status: Status.Pending,
+    address: '123 Verification St, Test City',
+    rate: 100,
+    estimatedHours: 2,
+    notes: 'This is a test appointment for verification.',
+    checklist: [
+      { id: 'task1', task: 'Clean kitchen', frequency: 'Every Time', completed: false },
+      { id: 'task2', task: 'Dust living room', frequency: 'Every Time', completed: false },
+    ],
+    jobLog: undefined
+  }
 ];
 
 const INITIAL_INVOICES: Invoice[] = [
@@ -268,9 +300,14 @@ class MockService implements IDataService {
         const ni = { ...i, id: i.id || Math.random().toString(36).substr(2, 9) }; 
         this.invoices.push(ni); return ni; 
     }
-    async updateInvoice(i: Invoice) { 
-        await delay(300); 
-        this.invoices = this.invoices.map(x => x.id === i.id ? i : x); return i; 
+    async updateInvoice(i: Invoice) {
+        await delay(300);
+        const idx = this.invoices.findIndex(x => x.id === i.id);
+        if (idx > -1) {
+            // Ensure new properties are merged correctly
+            this.invoices[idx] = { ...this.invoices[idx], ...i };
+        }
+        return i;
     }
     async deleteInvoice(id: string) { await delay(300); this.invoices = this.invoices.filter(x => x.id !== id); }
 

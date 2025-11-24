@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Appointment, Client, Status } from '../types';
+import { Appointment, Client, Status, ChecklistItem } from '../types';
 import { db } from '../services/mockData';
 import Modal from '../components/Modal';
-import { Plus, Trash2, Calendar, Grid, Clock, MapPin, User, DollarSign, Briefcase, FileText, ArrowLeft, CheckCircle, Edit, Phone, Mail } from 'lucide-react';
+import { Plus, Trash2, Calendar, Grid, Clock, MapPin, User, DollarSign, Briefcase, FileText, ArrowLeft, CheckCircle, Edit, Phone, Mail, CheckSquare, PlayCircle, PauseCircle, StopCircle } from 'lucide-react';
 
+const generateId = () => Math.random().toString(36).substr(2, 9);
 type ViewMode = 'CARDS' | 'CALENDAR';
 
 const AppointmentsView: React.FC = () => {
@@ -30,7 +31,8 @@ const AppointmentsView: React.FC = () => {
       notes: '',
       status: Status.Pending,
       recurrence: undefined,
-      seriesId: undefined
+      seriesId: undefined,
+      checklist: []
   };
   const [formData, setFormData] = useState<Partial<Appointment>>(emptyForm);
 
@@ -39,6 +41,9 @@ const AppointmentsView: React.FC = () => {
 
   // Calendar State
   const [currentMonth, setCurrentMonth] = useState(new Date());
+
+  // Job Timer State
+  const [elapsedTime, setElapsedTime] = useState(0);
 
   useEffect(() => {
     fetchData();
@@ -86,15 +91,18 @@ const AppointmentsView: React.FC = () => {
       const client = clients.find(c => c.id === clientId);
       if (client) {
           const primaryLocation = client.locations.find(l => l.isPrimary) || client.locations[0];
+          const clientChecklist = client.checklist ? JSON.parse(JSON.stringify(client.checklist)) : [];
+
           setFormData(prev => ({
               ...prev,
               clientId: client.id,
               clientName: client.name,
               address: primaryLocation ? primaryLocation.address : '',
-              notes: client.houseNotes // Auto-populate notes with house notes initially
+              notes: client.houseNotes, // Auto-populate notes with house notes initially
+              checklist: clientChecklist
           }));
       } else {
-        setFormData(prev => ({ ...prev, clientId: '', clientName: '', address: '' }));
+        setFormData(prev => ({ ...prev, clientId: '', clientName: '', address: '', checklist: [] }));
       }
   };
 
@@ -117,7 +125,8 @@ const AppointmentsView: React.FC = () => {
             estimatedHours: Number(formData.estimatedHours) || 0,
             notes: formData.notes || '',
             recurrence: formData.recurrence,
-            seriesId: formData.seriesId
+            seriesId: formData.seriesId,
+            checklist: formData.checklist || []
         };
 
         if (apptToSave.id) {
@@ -166,6 +175,144 @@ const AppointmentsView: React.FC = () => {
       }
   };
 
+  // --- JOB TRACKING ---
+  const formatTime = (seconds: number) => {
+      const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+      const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+      const s = (Math.floor(seconds) % 60).toString().padStart(2, '0');
+      return `${h}:${m}:${s}`;
+  };
+
+  useEffect(() => {
+    const jobLog = selectedAppt?.jobLog;
+    if (!jobLog || !jobLog.startTime || jobLog.endTime) {
+        if (elapsedTime > 0) setElapsedTime(0);
+        return;
+    }
+
+    const isPaused = jobLog.breaks.length > 0 && !jobLog.breaks[jobLog.breaks.length - 1].endTime;
+
+    const start = new Date(jobLog.startTime).getTime();
+    let breakDuration = 0;
+    jobLog.breaks.forEach(b => {
+        if (b.endTime) {
+            breakDuration += new Date(b.endTime).getTime() - new Date(b.startTime).getTime();
+        }
+    });
+
+    if (isPaused) {
+        const lastBreakStartTime = new Date(jobLog.breaks[jobLog.breaks.length - 1].startTime).getTime();
+        setElapsedTime((lastBreakStartTime - start - breakDuration) / 1000);
+    } else {
+        const interval = setInterval(() => {
+            const currentElapsed = (new Date().getTime() - start - breakDuration) / 1000;
+            setElapsedTime(currentElapsed);
+        }, 1000);
+        return () => clearInterval(interval);
+    }
+  }, [selectedAppt]);
+
+
+  const startTimer = () => {
+      if (!selectedAppt) return;
+      const now = new Date().toISOString();
+      let updatedAppt = { ...selectedAppt };
+
+      if (!updatedAppt.jobLog) {
+          updatedAppt.jobLog = { startTime: now, breaks: [], totalHours: 0 };
+          updatedAppt.status = Status.Active;
+      } else {
+          const lastBreak = updatedAppt.jobLog.breaks[updatedAppt.jobLog.breaks.length - 1];
+          if (lastBreak && !lastBreak.endTime) {
+              lastBreak.endTime = now;
+          }
+      }
+      setSelectedAppt(updatedAppt);
+  };
+
+  const pauseTimer = () => {
+      if (selectedAppt?.jobLog) {
+          const now = new Date().toISOString();
+          const updatedAppt = { ...selectedAppt };
+          const lastBreak = updatedAppt.jobLog.breaks[updatedAppt.jobLog.breaks.length - 1];
+          if (!lastBreak || lastBreak.endTime) {
+              updatedAppt.jobLog.breaks.push({ startTime: now });
+              setSelectedAppt(updatedAppt);
+          }
+      }
+  };
+
+  const stopTimer = async () => {
+      if (!selectedAppt || !selectedAppt.jobLog) return;
+
+      const now = new Date().toISOString();
+      let updatedAppt = { ...selectedAppt };
+
+      const lastBreak = updatedAppt.jobLog.breaks[updatedAppt.jobLog.breaks.length - 1];
+      if (lastBreak && !lastBreak.endTime) {
+          lastBreak.endTime = now;
+      }
+
+      const start = new Date(updatedAppt.jobLog.startTime).getTime();
+      let breakDuration = 0;
+      updatedAppt.jobLog.breaks.forEach(b => {
+          if (b.endTime) {
+              breakDuration += new Date(b.endTime).getTime() - new Date(b.startTime).getTime();
+          }
+      });
+
+      const totalMillis = new Date(now).getTime() - start - breakDuration;
+      const totalHours = totalMillis / (1000 * 60 * 60);
+
+      updatedAppt = {
+          ...updatedAppt,
+          jobLog: { ...updatedAppt.jobLog, endTime: now, totalHours },
+          status: Status.Completed
+      };
+
+      const incompleteTasks = (updatedAppt.checklist || []).filter(item => !item.completed);
+      if (incompleteTasks.length > 0) {
+          const notes = prompt(`You have ${incompleteTasks.length} incomplete tasks. Please leave a note explaining why.`);
+          if (notes) {
+              updatedAppt.notes = (updatedAppt.notes ? updatedAppt.notes + '\n\n' : '') + `Job Completion Notes: ${notes}`;
+          }
+      }
+
+      setSelectedAppt(updatedAppt);
+
+      await db.updateAppointment(updatedAppt);
+
+      const invoices = await db.getInvoices();
+      const relatedInvoice = invoices.find(inv => inv.appointmentId === updatedAppt.id);
+
+      if (relatedInvoice) {
+          const newAmount = updatedAppt.rate * totalHours;
+          const updatedInvoice = {
+              ...relatedInvoice,
+              amount: newAmount,
+              items: [{
+                  ...relatedInvoice.items[0],
+                  description: `${updatedAppt.serviceType} (${totalHours.toFixed(2)} hrs)`,
+                  quantity: totalHours,
+                  unitPrice: updatedAppt.rate
+              }]
+          };
+          await db.updateInvoice(updatedInvoice);
+      }
+
+      await fetchData();
+  };
+
+  const handleChecklistItemToggle = (itemId: string) => {
+      if (!selectedAppt) return;
+
+      const updatedChecklist = (selectedAppt.checklist || []).map(item =>
+          item.id === itemId ? { ...item, completed: !item.completed } : item
+      );
+
+      setSelectedAppt({ ...selectedAppt, checklist: updatedChecklist });
+  };
+
   const handleEdit = (appt: Appointment) => {
       setFormData({ ...appt });
       setIsModalOpen(true);
@@ -191,6 +338,28 @@ const AppointmentsView: React.FC = () => {
     [Status.Overdue]: 'bg-red-100 text-red-800',
     [Status.LowStock]: 'bg-red-100 text-red-800',
     [Status.InStock]: 'bg-green-100 text-green-800',
+  };
+
+  // Checklist Form Helpers
+  const addChecklistItem = () => {
+      const newItem: ChecklistItem = {
+          id: generateId(),
+          task: '',
+          frequency: 'Every Time',
+          completed: false
+      };
+      setFormData(prev => ({ ...prev, checklist: [...(prev.checklist || []), newItem] }));
+  };
+
+  const removeChecklistItem = (id: string) => {
+      setFormData(prev => ({ ...prev, checklist: (prev.checklist || []).filter(i => i.id !== id) }));
+  };
+
+  const updateChecklistItem = (id: string, field: keyof ChecklistItem, value: any) => {
+      setFormData(prev => ({
+          ...prev,
+          checklist: (prev.checklist || []).map(i => i.id === id ? { ...i, [field]: value } : i)
+      }));
   };
 
   const formatDate = (dateStr: string) => {
@@ -398,6 +567,40 @@ const AppointmentsView: React.FC = () => {
                     </div>
                 </div>
 
+                {/* Job Tracker */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <h3 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                        <Clock size={18}/> Job Tracker
+                    </h3>
+                    <div className="flex flex-col md:flex-row items-center justify-between bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <div className="text-center md:text-left mb-4 md:mb-0">
+                            <p className="text-sm font-medium text-gray-500">Elapsed Time</p>
+                            <p className="text-4xl font-bold text-gray-800 tabular-nums">{formatTime(elapsedTime)}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                            {selectedAppt.jobLog?.endTime ? (
+                                <p className="text-green-600 font-semibold">Job Completed</p>
+                            ) : (
+                                <>
+                                    {!selectedAppt.jobLog || (selectedAppt.jobLog.breaks.length > 0 && selectedAppt.jobLog.breaks[selectedAppt.jobLog.breaks.length-1].endTime === undefined) ? (
+                                        <button onClick={startTimer} className="flex items-center gap-2 px-6 py-3 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-lg shadow-md transition-colors">
+                                            <PlayCircle size={20}/>
+                                            {selectedAppt.jobLog ? 'Resume' : 'Start Job'}
+                                        </button>
+                                    ) : (
+                                        <button onClick={pauseTimer} className="flex items-center gap-2 px-6 py-3 bg-yellow-500 hover:bg-yellow-600 text-white font-semibold rounded-lg shadow-md transition-colors">
+                                            <PauseCircle size={20}/> Pause Break
+                                        </button>
+                                    )}
+                                    <button onClick={stopTimer} disabled={!selectedAppt.jobLog} className={`flex items-center gap-2 px-6 py-3 rounded-lg shadow-md transition-colors ${!selectedAppt.jobLog ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-red-500 hover:bg-red-600 text-white font-semibold'}`}>
+                                        <StopCircle size={20}/> End Job
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
                 {/* Client Contact Quick View (if client exists) */}
                  {client && (
                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -405,7 +608,7 @@ const AppointmentsView: React.FC = () => {
                             <h3 className="font-semibold text-gray-800 flex items-center gap-2"><User size={18}/> Client Contact Info</h3>
                         </div>
                         <div className="p-6">
-                            {client.contacts.filter(c => c.isPrimary).map(contact => (
+                            {client.contacts && client.contacts.filter(c => c.isPrimary).map(contact => (
                                 <div key={contact.id} className="flex items-center gap-6 text-sm">
                                     <div className="flex items-center gap-2">
                                         <User size={16} className="text-gray-400"/>
@@ -421,7 +624,7 @@ const AppointmentsView: React.FC = () => {
                                     </div>
                                 </div>
                             ))}
-                            {client.contacts.length === 0 && <div className="text-gray-400 italic">No contacts found for this client.</div>}
+                            {(!client.contacts || client.contacts.length === 0) && <div className="text-gray-400 italic">No contacts found for this client.</div>}
                         </div>
                     </div>
                  )}
@@ -456,6 +659,33 @@ const AppointmentsView: React.FC = () => {
                         </div>
                     </div>
                 </div>
+
+                {/* Checklist Card */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                        <h3 className="font-semibold text-gray-800 flex items-center gap-2"><CheckSquare size={18}/> Job Checklist</h3>
+                        <span className="bg-gray-200 text-gray-600 text-xs px-2 py-1 rounded-full">{(selectedAppt.checklist || []).length} items</span>
+                    </div>
+                    <div className="p-4 space-y-2 max-h-64 overflow-y-auto">
+                        {(selectedAppt.checklist || []).length > 0 ? selectedAppt.checklist?.map(item => (
+                            <label
+                                key={item.id}
+                                className={`text-sm flex items-center justify-between p-2 rounded-md cursor-pointer transition-colors ${item.completed ? 'bg-green-50 text-gray-500 line-through' : 'bg-gray-50 hover:bg-gray-100'}`}
+                            >
+                                <div className="flex items-center">
+                                    <input
+                                        type="checkbox"
+                                        checked={item.completed}
+                                        onChange={() => handleChecklistItemToggle(item.id)}
+                                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-3"
+                                    />
+                                    <span className="font-medium text-gray-800">{item.task}</span>
+                                </div>
+                                <span className={`text-xs px-2 py-1 rounded-full border ${item.completed ? 'bg-white text-gray-400' : 'bg-white text-gray-500'}`}>{item.frequency}</span>
+                            </label>
+                        )) : <div className="text-sm text-center text-gray-400 italic p-4">No checklist for this job.</div>}
+                    </div>
+                 </div>
 
                 {/* Notes */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -678,6 +908,37 @@ const AppointmentsView: React.FC = () => {
                     onChange={e => setFormData({...formData, notes: e.target.value})}
                     placeholder="Entry instructions, focus areas, etc."
                 />
+            </div>
+
+            {/* Checklist Editor */}
+            <div>
+                <div className="flex justify-between items-center mb-1">
+                     <label className="text-sm font-medium text-gray-700">Job Checklist</label>
+                     <button type="button" onClick={addChecklistItem} className="text-xs bg-primary-50 text-primary-700 px-2 py-1 rounded hover:bg-primary-100">+ Add Task</button>
+                </div>
+                 <div className="border border-gray-200 rounded-md p-3 space-y-2 max-h-48 overflow-y-auto">
+                    {(formData.checklist || []).map(item => (
+                        <div key={item.id} className="flex items-center gap-2">
+                            <input
+                                placeholder="Task description..."
+                                className="flex-grow border p-1 rounded text-sm"
+                                value={item.task}
+                                onChange={e => updateChecklistItem(item.id, 'task', e.target.value)}
+                            />
+                            <select
+                                className="border p-1 rounded text-sm bg-white"
+                                value={item.frequency}
+                                onChange={e => updateChecklistItem(item.id, 'frequency', e.target.value as ChecklistItem['frequency'])}
+                            >
+                                <option>Every Time</option>
+                                <option>Every Other Time</option>
+                                <option>Monthly</option>
+                            </select>
+                            <button type="button" onClick={() => removeChecklistItem(item.id)} className="text-gray-300 hover:text-red-500"><Trash2 size={16}/></button>
+                        </div>
+                    ))}
+                    {(formData.checklist || []).length === 0 && <div className="text-sm text-gray-400 italic">Starts with client's default checklist.</div>}
+                </div>
             </div>
 
             <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-gray-100">
