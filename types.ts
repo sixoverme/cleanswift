@@ -50,6 +50,30 @@ export interface Client {
   pets: Pet[];
   houseNotes: string;
   generalNotes: string;
+  checklist?: ChecklistItem[];
+}
+
+export interface ChecklistItem {
+  id: string;
+  task: string;
+  frequency: 'Every Time' | 'Every Other Time' | 'Monthly';
+  completed: boolean;
+}
+
+export interface ChecklistTemplate {
+  id: string;
+  name: string;
+  items: Omit<ChecklistItem, 'completed'>[];
+}
+
+export interface JobLog {
+  startTime: string; // ISO date string
+  endTime?: string; // ISO date string
+  breaks: {
+    startTime: string;
+    endTime?: string;
+  }[];
+  totalHours: number;
 }
 
 export interface Appointment {
@@ -66,6 +90,8 @@ export interface Appointment {
   notes: string;
   recurrence?: 'Weekly' | 'Biweekly' | 'Monthly';
   seriesId?: string;
+  checklist?: ChecklistItem[];
+  jobLog?: JobLog;
 }
 
 export interface InvoiceItem {
@@ -86,6 +112,8 @@ export interface Invoice {
   items: InvoiceItem[];
   notes: string;
   amount: number; // Total
+  paymentMethod?: string;
+  paymentNotes?: string;
 }
 
 export interface InventoryItem {
@@ -112,6 +140,7 @@ export interface UserProfile {
   avatar?: string; // Base64 or URL
   showLogoOnInvoice?: boolean;
   jobTypes: JobType[];
+  checklistTemplates?: ChecklistTemplate[];
 }
 
 export type ViewState = 'DASHBOARD' | 'CLIENTS' | 'APPOINTMENTS' | 'INVOICES' | 'INVENTORY' | 'SETTINGS';

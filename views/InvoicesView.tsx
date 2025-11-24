@@ -116,6 +116,7 @@ const InvoicesView: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [jobTypes, setJobTypes] = useState<{id: string, name: string, defaultRate: number}[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -132,6 +133,7 @@ const InvoicesView: React.FC = () => {
       amount: 0
   };
   const [formData, setFormData] = useState<Partial<Invoice>>(emptyInvoice);
+  const [paymentData, setPaymentData] = useState({ paymentMethod: 'Cash', paymentNotes: ''});
 
   useEffect(() => {
     fetchData();
@@ -227,6 +229,27 @@ const InvoicesView: React.FC = () => {
           items: [{ id: generateId(), description: defaultDesc, quantity: 1, unitPrice: defaultPrice }]
       });
       setIsModalOpen(true);
+  };
+
+  const handleOpenPaymentModal = () => {
+      setPaymentData({ paymentMethod: 'Cash', paymentNotes: '' });
+      setIsPaymentModalOpen(true);
+  };
+
+  const handleMarkAsPaid = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!selectedInvoice) return;
+
+      const updatedInvoice = {
+          ...selectedInvoice,
+          status: Status.Paid,
+          ...paymentData
+      };
+
+      await db.updateInvoice(updatedInvoice);
+      setSelectedInvoice(updatedInvoice); // Update view immediately
+      setIsPaymentModalOpen(false);
+      fetchData(); // Re-fetch all to update list view
   };
 
   const handleClientSelect = (clientId: string) => {
@@ -456,6 +479,17 @@ const InvoicesView: React.FC = () => {
                                  <span className="font-bold text-lg text-gray-900">${selectedInvoice.amount.toFixed(2)}</span>
                              </div>
                          </div>
+                         {selectedInvoice.status !== Status.Paid ? (
+                            <button onClick={handleOpenPaymentModal} className="w-full mt-4 bg-green-500 hover:bg-green-600 text-white font-semibold py-2 rounded-lg transition-colors flex items-center justify-center gap-2">
+                                <Check size={18}/> Mark as Paid
+                            </button>
+                         ) : (
+                            <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm">
+                                <p className="font-semibold text-green-800">Paid</p>
+                                <p className="text-green-700">Method: {selectedInvoice.paymentMethod || 'N/A'}</p>
+                                {selectedInvoice.paymentNotes && <p className="text-green-700 text-xs mt-1">Notes: {selectedInvoice.paymentNotes}</p>}
+                            </div>
+                         )}
                     </div>
 
                     {/* Client Info Card */}
@@ -594,6 +628,42 @@ const InvoicesView: React.FC = () => {
     <>
         {selectedInvoice ? renderDetailView() : renderListView()}
         
+        {/* Payment Modal */}
+        <Modal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} title="Record Payment">
+            <form onSubmit={handleMarkAsPaid} className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+                    <select
+                        value={paymentData.paymentMethod}
+                        onChange={e => setPaymentData({ ...paymentData, paymentMethod: e.target.value })}
+                        className="block w-full rounded-lg border border-gray-300 p-2"
+                    >
+                        <option>Cash</option>
+                        <option>Check</option>
+                        <option>Bank Transfer</option>
+                        <option>Credit Card</option>
+                        <option>Other</option>
+                    </select>
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Payment Notes (Optional)</label>
+                    <textarea
+                        value={paymentData.paymentNotes}
+                        onChange={e => setPaymentData({ ...paymentData, paymentNotes: e.target.value })}
+                        rows={3}
+                        className="block w-full rounded-lg border border-gray-300 p-2"
+                        placeholder="Check number, transaction ID, etc."
+                    />
+                </div>
+                <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                    <button type="button" onClick={() => setIsPaymentModalOpen(false)} className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200">Cancel</button>
+                    <button type="submit" className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700">
+                        Confirm Payment
+                    </button>
+                </div>
+            </form>
+        </Modal>
+
         {/* Invoice Modal */}
         <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={formData.id ? "Edit Invoice" : "Create Invoice"}>
              <form onSubmit={handleSave} className="space-y-6">
